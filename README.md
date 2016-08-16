@@ -29,3 +29,9 @@ ESP_FLASH_FREQ_DIV=0
 MODULES   = folderA folderB
 ```
 
+## Compile 
+```
+make  
+make flash 
+make clean
+```
