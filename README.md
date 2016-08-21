@@ -35,3 +35,7 @@ make
 make flash 
 make clean
 ```
+
+### OTA Flow
+
+![OTA Flow](./assets/fota-flow.png)

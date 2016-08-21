@@ -17,6 +17,8 @@
 #include "driver/led.h"
 #include "wps.h"
 #include "sc.h"
+//#include "task.h"
+#include "fota.h"
 
 #define KEY_NUM        1
 
@@ -25,6 +27,7 @@
 #define KEY_IO_FUNC    FUNC_GPIO0
 
 
+LOCAL fota_client client;
 
 LOCAL struct keys_param keys;
 LOCAL struct single_key_param *single_key;
@@ -34,8 +37,8 @@ short_press(void)
 {
   INFO("[KEY] Short press, run smartconfig\r\n");
   led_blink(1, 1);
-  sc_start();
-
+  //sc_start();
+  fota_connect(&client);
 }
 
 LOCAL void ICACHE_FLASH_ATTR
@@ -53,12 +56,23 @@ void ICACHE_FLASH_ATTR print_info()
   INFO("[INFO] SDK: %s\r\n", system_get_sdk_version());
   INFO("[INFO] Chip ID: %08X\r\n", system_get_chip_id());
   INFO("[INFO] Memory info:\r\n");
+  INFO("[INFO] Build time: %s\r\n", BUID_TIME);
   system_print_meminfo();
 }
 
 
 void ICACHE_FLASH_ATTR app_init()
 {
+  // const fota_info fota_conenction = {
+  //   .host = "test.vidieukhien.net",
+  //   .port = "80",
+  //   .security = 0,
+  //   .device_id = "device_id",
+  //   .access_key = "access_key",
+  //   .version = "version",
+  //   .path = "/fota.json?dev={device_id|%X}&token={access_key|%s}&version={version:%s}"
+  // };
+
   uart_init(BIT_RATE_115200, BIT_RATE_115200);
 
   print_info();
@@ -71,7 +85,16 @@ void ICACHE_FLASH_ATTR app_init()
 
   key_init(&keys);
   led_init();
-  led_blink(10, 10);
+  led_blink(10, 10); //1 second on, 1 second off
+
+  fota_init_client(&client,
+                    "test.vidieukhien.net",
+                    80,
+                    0,
+                    "access_key",
+                    "chipid",
+                    "version");
+
   wifi_set_opmode_current(STATION_MODE);
 
 }

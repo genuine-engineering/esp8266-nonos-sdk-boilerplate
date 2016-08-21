@@ -1,6 +1,8 @@
 # none sdkota espboot rboot
-OTA = none
-OTA_FW_ADDR = 0x10000
+OTA ?= espboot
+OTA_APP_ADDR = 0x2000
+OTA_BOOTLOADER_PATH = ../esp-bootloader/firmware/espboot.bin
+
 # Base directory for the compiler. Needs a / at the end; if not set it'll use the tools that are in
 # the PATH.
 XTENSA_TOOLS_ROOT ?=
@@ -23,7 +25,7 @@ ESP_MODE = qio
 ESP_SIZE = 32m
 
 
-VERBOSE = yes
+VERBOSE = no
 FLAVOR = debug
 # name for the target project
 TARGET		?= esp8266-nonos-app
@@ -33,10 +35,9 @@ USER_MODULES		= user driver
 USER_INC				= include
 USER_LIB				=
 
-LD_SCRIPT	= -Tld/eagle.app.v6.ld
 
 SDK_LIBDIR = lib
-SDK_LIBS = c gcc hal phy pp net80211 wpa main lwip crypto wps airkiss smartconfig
+SDK_LIBS = c gcc hal phy pp net80211 wpa main lwip crypto wps airkiss smartconfig ssl
 SDK_INC = include include/json
 
 
@@ -50,7 +51,7 @@ FIRMWARE_BASE		= firmware
 # redefinition of int types, try setting this to 'yes'.
 USE_OPENSDK ?= no
 
-
+DATETIME := $(shell date "+%Y-%b-%d_%H:%M:%S_%Z")
 
 # select which tools to use as compiler, librarian and linker
 CC		:= $(XTENSA_TOOLS_ROOT)xtensa-lx106-elf-gcc
@@ -98,7 +99,8 @@ CFLAGS		= -g			\
 						-ffunction-sections \
 						-fdata-sections	\
 						-fno-builtin-printf\
-						-DICACHE_FLASH
+						-DICACHE_FLASH \
+						-DBUID_TIME=\"$(DATETIME)\"
 
 # linker flags used to generate the main object file
 LDFLAGS		= -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static
@@ -136,15 +138,16 @@ endef
 ESPTOOL_OPTS=--port $(ESPPORT) --baud $(ESPBAUD)
 
 
-ifeq ("$(OTA)","sdkota")
-	OUTPUT := $(addprefix $(FIRMWARE_BASE)/,$(TARGET).bin)
-	ESPTOOL_WRITE = write_flash $(OTA_FW_ADDR) $(OUTPUT)
-	ESPTOOL_FLASHDEF=--flash_freq $(ESP_FREQ) --flash_mode $(ESP_MODE) --flash_size $(ESP_SIZE)
-	#ESPTOOL_FLASHDEF += --version=2
+ifeq ("$(OTA)","espboot")
+	OUTPUT := $(addprefix $(FIRMWARE_BASE)/,$(TARGET)-0x2000.bin)
+	ESPTOOL_WRITE = write_flash 0x0 $(OTA_BOOTLOADER_PATH) $(OTA_APP_ADDR) $(OUTPUT) -fs 32m
+	ESPTOOL_FLASHDEF=--flash_freq $(ESP_FREQ) --flash_mode $(ESP_MODE) --flash_size $(ESP_SIZE) --version=2
+	LD_SCRIPT	= -Tld/with-espboot-flash-at-0x2000-size-1M.ld
 else
 	OUTPUT := $(addprefix $(FIRMWARE_BASE)/,$(TARGET))
-	ESPTOOL_WRITE = write_flash 0x00000 $(OUTPUT)0x00000.bin 0x10000 $(OUTPUT)0x10000.bin
-	ESPTOOL_FLASHDEF=-fs $(ESP_SIZE)
+	ESPTOOL_WRITE = write_flash 0x00000 $(OUTPUT)0x00000.bin 0x10000 $(OUTPUT)0x10000.bin -fs $(ESP_SIZE)
+	ESPTOOL_FLASHDEF=
+	LD_SCRIPT	= -Tld/without-bootloader.ld
 endif
 
 
@@ -160,7 +163,11 @@ endef
 
 .PHONY: all checkdirs clean
 
-all: checkdirs $(OUTPUT)
+all: touch checkdirs $(OUTPUT)
+
+touch:
+	$(vecho) "BUID TIME $(DATETIME)"
+	$(Q) touch user/user_main.c
 
 checkdirs: $(BUILD_DIR) $(FIRMWARE_BASE)
 
@@ -183,16 +190,19 @@ $(APP_AR): $(OBJ)
 	$(Q) $(AR) cru $@ $^
 
 flash:
-	$(ESPTOOL) $(ESPTOOL_OPTS) $(ESPTOOL_WRITE) $(ESPTOOL_FLASHDEF)
+	$(ESPTOOL) $(ESPTOOL_OPTS) $(ESPTOOL_WRITE)
 
 f: clean all flash openport
+
+upload:
+	scp $(OUTPUT) root@vidieukhien.net:/var/www/test/
 
 openport:
 	$(vecho) "After flash, terminal will enter serial port screen"
 	$(vecho) "Please exit with command:"
 	$(vecho) "\033[0;31m" "Ctrl + A + k" "\033[0m"
 
-	@read -p "Press any key to continue... " -n1 -s
+	#@read -p "Press any key to continue... " -n1 -s
 	@screen $(ESPPORT) 115200
 
 clean:
