@@ -32,15 +32,18 @@ LOCAL struct single_key_param *single_key;
 LOCAL void ICACHE_FLASH_ATTR
 short_press(void)
 {
-  INFO("[KEY] Short press, run wps\r\n");
-  wps_start();
+  INFO("[KEY] Short press, run smartconfig\r\n");
+  led_blink(1, 1);
+  sc_start();
+
 }
 
 LOCAL void ICACHE_FLASH_ATTR
 long_press(void)
 {
-  INFO("[KEY] Long press, run smartconfig\r\n");
-  sc_start();
+  INFO("[KEY] Long press, run wps\r\n");
+  led_blink(5, 5);
+  wps_start();
 }
 
 
@@ -68,7 +71,7 @@ void ICACHE_FLASH_ATTR app_init()
 
   key_init(&keys);
   led_init();
-
+  led_blink(10, 10);
   wifi_set_opmode_current(STATION_MODE);
 
 }

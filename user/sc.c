@@ -9,6 +9,7 @@
 #include "smartconfig.h"
 #include "airkiss.h"
 
+#include "driver/led.h"
 
 
 #define DEVICE_TYPE     "gh_9e2cff3dfa51" //wechat public number
@@ -151,6 +152,7 @@ smartconfig_done(sc_status status, void *pdata)
     wifi_station_set_config(sta_conf);
     wifi_station_disconnect();
     wifi_station_connect();
+    led_blink(1, 0);
     break;
   case SC_STATUS_LINK_OVER:
     INFO("[SC] SC_STATUS_LINK_OVER\n");

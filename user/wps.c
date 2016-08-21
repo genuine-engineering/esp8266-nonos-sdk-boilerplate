@@ -2,11 +2,12 @@
 * @Author: Tuan PM
 * @Date:   2016-08-20 18:56:01
 * @Last Modified by:   Tuan PM
-* @Last Modified time: 2016-08-20 18:57:53
+* @Last Modified time: 2016-08-21 11:25:22
 */
 
 #include "osapi.h"
 #include "user_interface.h"
+#include "driver/led.h"
 
 LOCAL void ICACHE_FLASH_ATTR
 wps_status_cb(int status)
@@ -15,6 +16,7 @@ wps_status_cb(int status)
     case WPS_CB_ST_SUCCESS:
       wifi_wps_disable();
       wifi_station_connect();
+      led_blink(1000, 0);
       break;
     case WPS_CB_ST_FAILED:
     case WPS_CB_ST_TIMEOUT:
