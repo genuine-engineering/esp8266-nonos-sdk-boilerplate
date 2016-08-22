@@ -13,8 +13,10 @@ SDK_BASE	?= /tools/esp8266/sdk/ESP8266_NONOS_SDK
 #Esptool.py path and port
 ESPTOOL		?= /tools/esp8266/esptool/esptool.py
 ESPPORT		?= /dev/tty.SLAB_USBtoUART
+#ESPPORT		?= /dev/tty.wchusbserial1410
 #ESPDELAY indicates seconds to wait between flashing the two binary images
 ESPDELAY	?= 3
+#ESPBAUD		?= 115200
 ESPBAUD		?= 460800
 
 # 40m 26m 20m 80m
@@ -37,7 +39,7 @@ USER_LIB				=
 
 
 SDK_LIBDIR = lib
-SDK_LIBS = c gcc hal phy pp net80211 wpa main lwip crypto wps airkiss smartconfig ssl
+SDK_LIBS = c gcc hal phy pp net80211 wpa main lwip crypto wps airkiss smartconfig ssl json
 SDK_INC = include include/json
 
 
@@ -137,15 +139,31 @@ endef
 
 ESPTOOL_OPTS=--port $(ESPPORT) --baud $(ESPBAUD)
 
+#32m
+ESP_INIT_DATA_DEFAULT_ADDR = 0xfc000
+
+ifeq ("$(ESP_SIZE)","16m")
+	ESP_INIT_DATA_DEFAULT_ADDR = 0x1fc000
+else ifeq ("$(ESP_SIZE)","32m")
+	ESP_INIT_DATA_DEFAULT_ADDR = 0x3fc000
+endif
 
 ifeq ("$(OTA)","espboot")
 	OUTPUT := $(addprefix $(FIRMWARE_BASE)/,$(TARGET)-0x2000.bin)
-	ESPTOOL_WRITE = write_flash 0x0 $(OTA_BOOTLOADER_PATH) $(OTA_APP_ADDR) $(OUTPUT) -fs 32m
-	ESPTOOL_FLASHDEF=--flash_freq $(ESP_FREQ) --flash_mode $(ESP_MODE) --flash_size $(ESP_SIZE) --version=2
+	ESPTOOL_WRITE = write_flash --flash_freq $(ESP_FREQ) --flash_mode $(ESP_MODE) --flash_size $(ESP_SIZE) \
+									0x00000 $(OTA_BOOTLOADER_PATH) \
+									$(OTA_APP_ADDR) $(OUTPUT) \
+									$(ESP_INIT_DATA_DEFAULT_ADDR) $(SDK_BASE)/bin/esp_init_data_default.bin
+
+	ESPTOOL_FLASHDEF=--version=2
 	LD_SCRIPT	= -Tld/with-espboot-flash-at-0x2000-size-1M.ld
 else
 	OUTPUT := $(addprefix $(FIRMWARE_BASE)/,$(TARGET))
-	ESPTOOL_WRITE = write_flash 0x00000 $(OUTPUT)0x00000.bin 0x10000 $(OUTPUT)0x10000.bin -fs $(ESP_SIZE)
+	ESPTOOL_WRITE = write_flash --flash_freq $(ESP_FREQ) --flash_mode $(ESP_MODE) --flash_size $(ESP_SIZE) \
+									0x00000 $(OUTPUT)0x00000.bin \
+									0x10000 $(OUTPUT)0x10000.bin \
+									$(ESP_INIT_DATA_DEFAULT_ADDR) $(SDK_BASE)/bin/esp_init_data_default.bin
+
 	ESPTOOL_FLASHDEF=
 	LD_SCRIPT	= -Tld/without-bootloader.ld
 endif
@@ -166,7 +184,9 @@ endef
 all: touch checkdirs $(OUTPUT)
 
 touch:
+	$(vecho) "-------------------------------------------\n"
 	$(vecho) "BUID TIME $(DATETIME)"
+	$(vecho) "-------------------------------------------\n"
 	$(Q) touch user/user_main.c
 
 checkdirs: $(BUILD_DIR) $(FIRMWARE_BASE)
@@ -193,9 +213,9 @@ flash:
 	$(ESPTOOL) $(ESPTOOL_OPTS) $(ESPTOOL_WRITE)
 
 f: clean all flash openport
-
+	@(vecho) "Flash by Serial port with 115200 baud"
 upload:
-	scp $(OUTPUT) root@vidieukhien.net:/var/www/test/
+	$(Q) scp $(OUTPUT) root@vidieukhien.net:/var/www/test/
 
 openport:
 	$(vecho) "After flash, terminal will enter serial port screen"

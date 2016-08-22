@@ -18,7 +18,8 @@ typedef enum {
     FOTA_GETTING_FILE,
     FOTA_GOT_FILE,
     FOTA_CHECKING,
-    FOTA_IDLE
+    FOTA_IDLE,
+    FOTA_FINISHING
 
 } tfota_state;
 

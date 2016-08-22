@@ -4,6 +4,7 @@
 #include "mem.h"
 #include "osapi.h"
 #include "fota.h"
+#include "user_json.h"
 
 #define FOTA_PRIO              1
 #define FOTA_QUEUE_SIZE        1
@@ -12,11 +13,42 @@ os_event_t fota_procTaskQueue[FOTA_QUEUE_SIZE];
 #define HTTP_HEADER "Connection: close\r\n"\
                                         "Cache-Control: no-cache\r\n"\
                                         "User-Agent:device@tuanpm\r\n\r\n"
+
+char path_download[128];
+LOCAL int ICACHE_FLASH_ATTR
+json_set(struct jsontree_context *js_ctx, struct jsonparse_state *parser)
+{
+  int type;
+  while ((type = jsonparse_next(parser)) != 0) {
+    if (type == JSON_TYPE_PAIR_NAME) {
+
+      os_bzero(path_download, 128);
+      if (jsonparse_strcmp_value(parser, "path") == 0) {
+        jsonparse_next(parser);
+        jsonparse_next(parser);
+        jsonparse_copy_value(parser, path_download, sizeof(path_download));
+        INFO("JSON: %s\r\n", path_download);
+        return 0;
+      }
+    }
+  }
+}
+
+LOCAL struct jsontree_callback path_callback =
+  JSONTREE_CALLBACK(NULL, json_set);
+
+JSONTREE_OBJECT(path_tree,
+                JSONTREE_PAIR("path", &path_callback));
+
+JSONTREE_OBJECT(data_tree,
+                JSONTREE_PAIR("data", &path_tree));
+
+
 static uint8 ICACHE_FLASH_ATTR
 calc_chksum(uint8 *start, uint8 *end)
 {
   uint8 chksum = CHKSUM_INIT;
-  while(start < end) {
+  while (start < end) {
     chksum ^= *start;
     start++;
   }
@@ -36,8 +68,8 @@ save_boot_cfg(espboot_cfg *cfg)
   }
   if (SPIWrite(BOOT_CONFIG_SECTOR * SECTOR_SIZE, cfg, sizeof(espboot_cfg)) != 0)
   {
-      INFO("Can not save boot configurations\r\n");
-      while(1);
+    INFO("Can not save boot configurations\r\n");
+    while (1);
   }
 }
 
@@ -46,10 +78,10 @@ load_boot_cfg(espboot_cfg *cfg)
 {
   if (SPIRead(BOOT_CONFIG_SECTOR * SECTOR_SIZE, cfg, sizeof(espboot_cfg)) != 0)
   {
-      INFO("Can not read boot configurations\r\n");
+    INFO("Can not read boot configurations\r\n");
   }
   INFO("ESPBOOT: Load");
-  if(cfg->magic != BOOT_CONFIG_MAGIC || cfg->chksum != calc_chksum((uint8*)cfg, (uint8*)&cfg->chksum))
+  if (cfg->magic != BOOT_CONFIG_MAGIC || cfg->chksum != calc_chksum((uint8*)cfg, (uint8*)&cfg->chksum))
   {
     INFO(" default");
     cfg->magic = BOOT_CONFIG_MAGIC;
@@ -128,10 +160,10 @@ write(fota_client* client, uint8* data, uint32 len)
     load_boot_cfg(&cfg);
     cfg.new_rom_addr = DEFAULT_NEWROM_ADDR;
     save_boot_cfg(&cfg);
-    INFO("\r\nFOTA: Reboot with new app\r\n");
-    fota_disconnect(client);
-    os_delay_us(500000);
-    system_restart();
+    INFO("\r\nFOTA: Finishing....\r\n");
+    client->fota_state == FOTA_FINISHING;
+    // os_delay_us(500000);
+    //system_restart();
   }
 }
 
@@ -172,14 +204,21 @@ fota_tcpclient_recv(void *arg, char *pusrdata, unsigned short len)
       //os_strcpy(ptrData, ptr);
       //ptrData += pathLen - 1;
       //INFO("[FOTA] Path: %s\r\n", ptrData);
+      struct jsontree_context js;
+
+      jsontree_setup(&js, (struct jsontree_value *)&data_tree, json_putchar);
+      json_parse(&js, ptr);
+
       INFO("[FOTA] Upgrade infomation received: %s\r\n", ptr);
-      if(client->path)
-        os_free(client->path);
-      client->path = os_zalloc(128);
-      sprintf(client->path, "/esp8266-nonos-app-0x2000.bin");
+      // if (client->path)
+      //   os_free(client->path);
+      // client->path = os_zalloc(128);
+
+      // os_strcpy(client->path, path_download);
+      client->path = path_download;
       //JSON_ParserPacket(ptr, pathLen);
       //client->fota_state = FOTA_GET_FILE;
-      INFO("[FOTA] FOTA_GET_FILE\r\n");
+      INFO("[FOTA] Download file: %s\r\n", client->path);
     } else {
       INFO("Invalid response\r\n");
       client->fota_state = FOTA_IDLE;
@@ -274,11 +313,11 @@ fota_task(os_event_t *e)
 
       temp = (uint8_t *)os_zalloc(512);
       sendLen = os_sprintf(temp, "GET %s HTTP/1.1\r\nHost: %s:%d\r\n"HTTP_HEADER"",
-              client->path, client->host, client->port);
-      if(client->security)
-              espconn_secure_sent(client->pCon, temp, sendLen);
-          else
-              espconn_sent(client->pCon, temp, sendLen);
+                           client->path, client->host, client->port);
+      if (client->security)
+        espconn_secure_sent(client->pCon, temp, sendLen);
+      else
+        espconn_sent(client->pCon, temp, sendLen);
       os_free(temp);
       client->fota_state = FOTA_GETTING_FILE;
       //send query get file
@@ -287,11 +326,16 @@ fota_task(os_event_t *e)
   case FOTA_CONN_SENT:
     break;
   case FOTA_CONN_RECEIVED:
+
+    if (client->fota_state == FOTA_FINISHING) {
+      INFO("[FOTA] Disconnect from service\r\n");
+      espconn_disconnect(client->pCon);
+    }
     break;
   case FOTA_CONN_DISCONNECT:
     if (client->fota_state == FOTA_SENDING_CHECKING) {
       //connect to server get file
-      INFO("[FOTA]Connect to FOTA server again to get bin file\r\n");
+      INFO("[FOTA] Connect to FOTA server again to get bin file\r\n");
       if (client->security)
         espconn_secure_connect(client->pCon);
       else
@@ -299,9 +343,16 @@ fota_task(os_event_t *e)
       client->fota_state = FOTA_GET_FILE;
     } else if (client->fota_state == FOTA_GETTING_FILE) {
       //cleanup connection
-      fota_disconnect(client);
-      client->fota_state = FOTA_IDLE;
+      //fota_disconnect(client);
+      //client->fota_state = FOTA_FINISHING;
+      INFO("[FOTA] Reboot to bootloader\r\n");
+      system_restart();
+      while(1);
 
+    } else if (client->fota_state == FOTA_FINISHING) {
+      INFO("[FOTA] Reboot to bootloader\r\n");
+      system_restart();
+      while(1);
     }
     break;
 
@@ -344,7 +395,7 @@ fota_init_client(fota_client *client, uint8_t* host, uint32 port, uint32 securit
 
   client->security = security;
   client->recv_buf = (uint8_t*)os_zalloc(4096);
-  INFO("[FOTA] Init client, 4096 bytes buffer: %d\r\n", client->recv_buf);
+  //INFO("[FOTA] Init client, 4096 bytes buffer: %d\r\n", client->recv_buf);
   client->recv_len = 0;
   //TASK_InitClient(1, client->clientType, fota_task);
   //TASK_Push(1, (os_param_t)client);
@@ -481,39 +532,39 @@ fota_connect(fota_client *client)
 uint8_t ICACHE_FLASH_ATTR str_to_ip(const int8_t* str, void *ip)
 {
 
-      /* The count of the number of bytes processed. */
-      int i;
-      /* A pointer to the next digit to process. */
-      const char * start;
+  /* The count of the number of bytes processed. */
+  int i;
+  /* A pointer to the next digit to process. */
+  const char * start;
 
-      start = str;
-      for (i = 0; i < 4; i++) {
-          /* The digit being processed. */
-          char c;
-          /* The value of this byte. */
-          int n = 0;
-          while (1) {
-              c = * start;
-              start++;
-              if (c >= '0' && c <= '9') {
-                  n *= 10;
-                  n += c - '0';
-              }
-              /* We insist on stopping at "." if we are still parsing
-                 the first, second, or third numbers. If we have reached
-                 the end of the numbers, we will allow any character. */
-              else if ((i < 3 && c == '.') || i == 3) {
-                  break;
-              }
-              else {
-                  return 0;
-              }
-          }
-          if (n >= 256) {
-              return 0;
-          }
-          ((uint8_t*)ip)[i] = n;
+  start = str;
+  for (i = 0; i < 4; i++) {
+    /* The digit being processed. */
+    char c;
+    /* The value of this byte. */
+    int n = 0;
+    while (1) {
+      c = * start;
+      start++;
+      if (c >= '0' && c <= '9') {
+        n *= 10;
+        n += c - '0';
       }
-      return 1;
+      /* We insist on stopping at "." if we are still parsing
+         the first, second, or third numbers. If we have reached
+         the end of the numbers, we will allow any character. */
+      else if ((i < 3 && c == '.') || i == 3) {
+        break;
+      }
+      else {
+        return 0;
+      }
+    }
+    if (n >= 256) {
+      return 0;
+    }
+    ((uint8_t*)ip)[i] = n;
+  }
+  return 1;
 
 }

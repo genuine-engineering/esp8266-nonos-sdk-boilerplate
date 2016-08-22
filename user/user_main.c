@@ -37,8 +37,8 @@ short_press(void)
 {
   INFO("[KEY] Short press, run smartconfig\r\n");
   led_blink(1, 1);
-  //sc_start();
-  fota_connect(&client);
+  sc_start();
+  //fota_connect(&client);
 }
 
 LOCAL void ICACHE_FLASH_ATTR
@@ -46,18 +46,23 @@ long_press(void)
 {
   INFO("[KEY] Long press, run wps\r\n");
   led_blink(5, 5);
-  wps_start();
+  //wps_start();
+  fota_connect(&client);
 }
 
 
 void ICACHE_FLASH_ATTR print_info()
 {
-  INFO("BOOTUP\r\n");
+  INFO("\r\n\r\n[INFO] BOOTUP...\r\n");
   INFO("[INFO] SDK: %s\r\n", system_get_sdk_version());
   INFO("[INFO] Chip ID: %08X\r\n", system_get_chip_id());
   INFO("[INFO] Memory info:\r\n");
-  INFO("[INFO] Build time: %s\r\n", BUID_TIME);
   system_print_meminfo();
+
+  INFO("[INFO] -------------------------------------------\n");
+  INFO("[INFO] Build time: %s\n", BUID_TIME);
+  INFO("[INFO] -------------------------------------------\n");
+
 }
 
 
